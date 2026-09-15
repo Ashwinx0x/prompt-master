@@ -4,19 +4,47 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prompt-master"
-version = "0.2.0"
+version = "1.0.0"
 description = "Universal, provider-neutral prompt engineering toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{name = "Ashwinx0x"}]
+keywords = ["prompt-engineering", "llm", "ai", "chatgpt", "claude", "gemini", "copilot", "prompt-optimization"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Text Processing",
+]
 dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "build>=1.2",
+]
+
+[project.urls]
+Homepage = "https://github.com/Ashwinx0x/prompt-master"
+Repository = "https://github.com/Ashwinx0x/prompt-master"
+Issues = "https://github.com/Ashwinx0x/prompt-master/issues"
 
 [project.scripts]
 prompt-master = "prompt_master.cli:main"
+pm = "prompt_master.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-q"
