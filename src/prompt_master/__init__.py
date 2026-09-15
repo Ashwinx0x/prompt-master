@@ -1,8 +1,17 @@
-"""Prompt Master: universal prompt engineering toolkit."""
+"""Prompt Master: universal, provider-neutral prompt engineering toolkit."""
 
-from .core import optimize
+from .core import MODES, classify, optimize, render
 from .lint import LintIssue, lint
-from .schemas import Prompt, OptimizationResult
+from .schemas import OptimizationResult, Prompt
 
-__all__ = ["Prompt", "OptimizationResult", "LintIssue", "optimize", "lint"]
-__version__ = "0.2.0"
+__all__ = [
+    "MODES",
+    "Prompt",
+    "OptimizationResult",
+    "LintIssue",
+    "classify",
+    "optimize",
+    "render",
+    "lint",
+]
+__version__ = "1.0.0"
