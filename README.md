@@ -4,20 +4,35 @@
 
 Prompt Master turns a rough request into a structured, robust prompt that can be pasted into ChatGPT, Claude, Gemini, Copilot, Cursor, local models, or another LLM.
 
-## 1.0.0 — install once, use anywhere
+## 1.1.0 — smarter optimization, optional semantics, evaluation
 
-Prompt Master is intentionally lightweight: the core package has **no runtime dependencies and no network calls**. The deterministic engine preserves the user's intent, identifies likely missing context, adds a practical quality bar, and can lint the original request for common quality and credential-leakage problems.
+Prompt Master is intentionally lightweight: the deterministic core has **no runtime dependencies and no network calls**. It preserves the user's intent, classifies the task, audits missing context, constructs a practical prompt, and lints quality and credential-leakage problems locally.
+
+An **explicitly opt-in** semantic mode can then pass the generated prompt through an OpenAI-compatible endpoint. This is an optional layer; the deterministic core remains usable offline.
+
+### Pipeline
+
+```text
+rough request
+    ↓
+classify → completeness audit → construct → lint → render
+    ↓
+(optional semantic optimizer)
+    ↓
+evaluate / compare
+```
 
 ### What it does
 
-`rough request → classify → completeness audit → construct → lint → render`
-
-- **Universal:** provider-neutral output instead of vendor-specific syntax.
+- **Universal:** provider-neutral prompt structure instead of vendor-specific syntax.
 - **Outcome-first:** keeps the user's actual goal as the objective.
+- **Explainable classification:** exposes detected mode, confidence, and matching signals.
 - **Minimal assumptions:** flags missing context instead of inventing facts.
 - **Structured:** separates objective, context, constraints, approach, quality, and output.
-- **Safe:** detects likely credentials locally; prompt text is not sent anywhere.
-- **Practical:** supports coding, SQL/data, research, writing, analysis, creative, image, and agent tasks.
+- **Safe by default:** deterministic mode does not send prompt text anywhere; likely credentials are detected locally.
+- **Optional semantic optimization:** use an OpenAI-compatible endpoint only when explicitly requested.
+- **Local evaluation:** scores prompt-construction quality with an explainable rubric.
+- **A/B comparison:** compare two prompt candidates and see which scores better and why.
 - **Automation-friendly:** human-readable Markdown or machine-readable JSON.
 
 ## Install in VS Code
@@ -88,6 +103,24 @@ python -m prompt_master "Rewrite this email to sound professional and polite"
 prompt-master "Create a SQL query to find customers with more than 3 orders" --lint
 ```
 
+### Evaluate the generated prompt
+
+```bash
+prompt-master "Make this SQL query faster" --evaluate
+```
+
+The local score measures prompt-construction properties such as explicit output, constraints, quality criteria, and structure. **It is not a guarantee of model answer correctness.**
+
+### Compare against another prompt
+
+Save a candidate prompt in `candidate.txt`, then:
+
+```bash
+prompt-master "Make this SQL query faster" --compare-with candidate.txt
+```
+
+Prompt Master compares the generated candidate (A) with the file candidate (B) using the same rubric.
+
 ### Force a task mode
 
 ```bash
@@ -99,7 +132,7 @@ prompt-master "Create a cinematic portrait prompt" --mode image
 ### JSON for scripts and automation
 
 ```bash
-prompt-master "Explain this Python error and give me a production-safe fix" --lint --json
+prompt-master "Explain this Python error and give me a production-safe fix" --lint --evaluate --json
 ```
 
 ### Read from stdin
@@ -107,6 +140,23 @@ prompt-master "Explain this Python error and give me a production-safe fix" --li
 ```bash
 echo "Make this SQL faster" | prompt-master --mode sql
 ```
+
+### Optional semantic optimization
+
+Set credentials only in your environment, never in the repository:
+
+```powershell
+$env:PROMPT_MASTER_API_KEY="your-key"
+$env:PROMPT_MASTER_MODEL="gpt-4.1-mini"
+```
+
+Then explicitly opt in:
+
+```bash
+prompt-master "Rewrite this technical request to be clearer" --semantic
+```
+
+You can point the adapter at an OpenAI-compatible endpoint with `PROMPT_MASTER_BASE_URL`. This can also be used with compatible local servers. Semantic mode is intentionally **not** enabled by default.
 
 ### Check the installed version
 
@@ -121,16 +171,19 @@ prompt-master --version
 ## Python API
 
 ```python
-from prompt_master import optimize, lint
+from prompt_master import compare, evaluate, optimize
 
 result = optimize("Create a BigQuery query to find duplicate customer IDs")
 print(result.rendered)
 print(result.prompt.mode)
 print(result.score)
 
-issues = lint("Create a SQL query. api_key=sk-example1234567890")
-for issue in issues:
-    print(issue.code, issue.severity, issue.message)
+assessment = evaluate(result.rendered)
+print(assessment.score)
+print(assessment.issues)
+
+comparison = compare("Tell me about SQL", result.rendered)
+print(comparison.winner, comparison.margin)
 ```
 
 ## Example
@@ -139,7 +192,7 @@ Input:
 
 > make this SQL faster
 
-Prompt Master does not pretend to know the schema or query. It identifies SQL as the task, preserves the request, adds safe instructions, and asks for the missing query/schema or sample data when needed.
+Prompt Master does not pretend to know the schema or query. It identifies SQL as the task, exposes the classification signal, preserves the request, adds safe instructions, and asks for missing query/schema or sample data when needed.
 
 ## Architecture
 
@@ -147,14 +200,18 @@ The project is split into small, dependency-free layers:
 
 ```text
 src/prompt_master/
-├── core.py       # classification, optimization, rendering
-├── schemas.py    # portable Prompt / OptimizationResult models
-├── lint.py       # local quality and secret checks
-├── cli.py        # prompt-master / pm command line interface
-└── __main__.py   # python -m prompt_master
+├── core.py           # optimization, rendering, adapter orchestration
+├── classification.py # explainable task classification
+├── audit.py          # completeness / missing-context audit
+├── evaluation.py     # local scoring and A/B comparison
+├── adapters.py       # optional LLM adapter protocol + OpenAI-compatible adapter
+├── schemas.py        # portable Prompt / OptimizationResult models
+├── lint.py           # local quality and secret checks
+├── cli.py            # prompt-master / pm command line interface
+└── __main__.py       # python -m prompt_master
 ```
 
-This keeps the core provider-neutral. A future LLM adapter, MCP server, VS Code extension, or web UI can build on the same Prompt representation without changing the deterministic safety layer.
+The architecture keeps provider-specific behavior at the edge. The deterministic core remains safe and portable, while semantic optimization and future MCP / VS Code / web integrations can be layered on top.
 
 ## Development
 
@@ -170,22 +227,31 @@ Build the package locally:
 python -m build
 ```
 
-The project targets Python **3.10+** and has no runtime dependencies.
+The project targets Python **3.10+** and has no required runtime dependencies.
 
 ## Roadmap
 
-The 1.0.0 foundation is complete. Future integrations can be added without making the core dependent on a specific AI provider:
+### Completed through Phase 3
 
 - [x] Provider-neutral prompt IR
 - [x] Task classification
+- [x] Explainable classification confidence and signals
 - [x] Completeness and assumption audit
 - [x] Prompt construction and Markdown rendering
 - [x] Deterministic linting and local secret detection
 - [x] CLI, `pm` alias, stdin, and JSON output
 - [x] Python module entry point
 - [x] Packaging metadata, MIT license, tests, and CI foundation
-- [ ] Optional LLM-backed semantic optimizer
-- [ ] Prompt evaluation / A-B testing
+- [x] Optional LLM-backed semantic optimizer
+- [x] Provider-neutral LLM adapter protocol
+- [x] Local prompt evaluation rubric
+- [x] Prompt A/B comparison
+
+### Next
+
+- [ ] Semantic evaluation against actual model outputs
+- [ ] Multi-provider native adapters
+- [ ] Prompt compression / redundancy reduction
 - [ ] MCP server
 - [ ] VS Code extension
 - [ ] Web UI

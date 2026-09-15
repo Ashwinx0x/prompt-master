@@ -6,6 +6,8 @@ LLM adapters without changing the public Prompt representation.
 """
 
 import re
+from .audit import audit
+from .classification import classify_detailed
 from .schemas import OptimizationResult, Prompt
 
 MODES = {
@@ -24,25 +26,20 @@ VALID_MODES = {"auto", *MODES}
 
 
 def classify(text: str) -> str:
-    """Infer the most likely task mode using deterministic keyword scoring."""
-    low = text.lower()
-    scores = {mode: sum(len(re.findall(rf"\b{re.escape(k)}\b", low)) for k in keys) for mode, keys in MODES.items()}
-    best = max(scores, key=scores.get)
-    return best if scores[best] else "auto"
+    """Infer the most likely task mode using weighted deterministic signals."""
+    return classify_detailed(text).mode
 
 
 def _questions(mode: str, text: str) -> list[str]:
     """Return at most two high-value clarification questions."""
     low = text.lower()
     questions: list[str] = []
-    if mode in {"coding", "sql", "data"}:
-        if not any(x in low for x in ("schema", "table", "code", "query", "input", "sample")):
-            questions.append("What is the relevant code, schema, input, or sample data?")
+    if mode in {"coding", "sql", "data"} and not any(x in low for x in ("schema", "table", "code", "query", "input", "sample")):
+        questions.append("What is the relevant code, schema, input, or sample data?")
     if mode == "research":
         questions.append("What scope, geography, timeframe, and source-quality requirements should be used?")
-    if mode in {"writing", "creative"}:
-        if not any(x in low for x in ("audience", "tone", "formal", "casual", "concise", "long")):
-            questions.append("Who is the audience, and what tone or length should the output have?")
+    if mode in {"writing", "creative"} and not any(x in low for x in ("audience", "tone", "formal", "casual", "concise", "long")):
+        questions.append("Who is the audience, and what tone or length should the output have?")
     if mode == "image" and not any(x in low for x in ("aspect", "ratio", "vertical", "square", "landscape")):
         questions.append("What aspect ratio or target platform should the image use?")
     return questions[:2]
@@ -76,7 +73,9 @@ def optimize(request: str, mode: str = "auto") -> OptimizationResult:
     if mode not in VALID_MODES:
         raise ValueError(f"Unknown mode: {mode}. Choose from: {', '.join(sorted(VALID_MODES))}")
 
-    selected = classify(request) if mode == "auto" else mode
+    classification = classify_detailed(request)
+    selected = classification.mode if mode == "auto" else mode
+    audit_issues = audit(request, selected)
     questions = _questions(selected, request)
     prompt = Prompt(
         objective=request,
@@ -97,8 +96,24 @@ def optimize(request: str, mode: str = "auto") -> OptimizationResult:
         clarification_questions=questions,
         mode=selected,
     )
-    diagnostics: list[str] = []
-    if questions:
-        diagnostics.append("Some context may be missing; the prompt preserves this instead of guessing.")
-    score = min(100, 70 + len(prompt.constraints) * 5 + len(prompt.quality_criteria) * 5)
+    diagnostics: list[str] = [
+        f"Intent confidence: {classification.confidence:.0%}" if mode == "auto" else "Mode selected explicitly by the user."
+    ]
+    if classification.matched_signals and mode == "auto":
+        diagnostics.append("Classification signals: " + ", ".join(classification.matched_signals[:5]))
+    if audit_issues:
+        diagnostics.append(f"Completeness audit found {len(audit_issues)} potential gap(s).")
+        questions.extend(issue.message for issue in audit_issues if issue.message not in questions)
+        prompt.clarification_questions = questions[:4]
+    score = max(0, min(100, 100 - len(audit_issues) * 8))
     return OptimizationResult(prompt=prompt, rendered=render(prompt), diagnostics=diagnostics, score=score)
+
+
+def optimize_with_adapter(request: str, mode: str = "auto", adapter=None) -> OptimizationResult:
+    """Run deterministic optimization, then an optional semantic LLM pass."""
+    if adapter is None:
+        raise ValueError("An LLM adapter is required for semantic optimization")
+    result = optimize(request, mode)
+    result.rendered = adapter.optimize(result.rendered)
+    result.diagnostics.append("Semantic optimization applied through the configured LLM adapter.")
+    return result
