@@ -4,6 +4,10 @@
 
 Prompt Master turns a rough request into a clear, robust, provider-neutral prompt that can be used with ChatGPT, Claude, Gemini, Copilot, Cursor, local models, or other LLMs.
 
+## Why this version matters
+
+Prompt Master **0.2.0** adds a deterministic quality/safety layer. It can now lint generated prompts for missing output direction, missing constraints, excessive length, and possible credential leakage—without sending prompt content to an external service.
+
 ## Design goals
 
 - **Universal:** optimize the task, not a single vendor.
@@ -11,14 +15,14 @@ Prompt Master turns a rough request into a clear, robust, provider-neutral promp
 - **Minimal assumptions:** identify missing information instead of inventing it.
 - **Structured:** separate objective, context, constraints, inputs, process, and output.
 - **Efficient:** remove filler and redundant instructions.
-- **Practical:** produce copy-ready prompts, not prompt-theory lectures.
+- **Safe by default:** flag likely secrets and treat missing context as uncertainty.
 - **Extensible:** support coding, SQL/data, research, writing, analysis, creative work, image generation, and agent workflows.
 
 ## Pipeline
 
 `request → classify → completeness audit → strategy → construct → compress → lint → render`
 
-The core package is intentionally provider-neutral. An LLM-backed optimizer can be added later without changing the prompt representation or validation layer.
+The core package is intentionally provider-neutral. Semantic optimization can later be connected through pluggable LLM adapters without changing the prompt representation or validation layer.
 
 ## Quick start
 
@@ -27,10 +31,16 @@ pip install -e .
 prompt-master "Create a SQL query to find customers with more than 3 orders"
 ```
 
-Or:
+Run quality and safety checks:
 
 ```bash
-python -m prompt_master.cli "Explain this Python error and give me a production-safe fix"
+prompt-master "Create a SQL query to find customers with more than 3 orders" --lint
+```
+
+For automation and CI pipelines:
+
+```bash
+prompt-master "Explain this Python error and give me a production-safe fix" --lint --json
 ```
 
 ## Modes
@@ -43,21 +53,22 @@ Input:
 
 > make this SQL faster
 
-Output will identify the missing context and produce a useful prompt with explicit placeholders rather than pretending to know the schema, engine, data volume, or current query.
+Output identifies the missing context and produces a useful prompt with explicit clarification points rather than pretending to know the schema, engine, data volume, or current query.
 
 ## Roadmap
 
 - [x] Provider-neutral prompt IR
 - [x] Task classification
 - [x] Completeness and assumption audit
-- [x] Prompt construction and linting
-- [x] CLI
+- [x] Prompt construction
+- [x] Deterministic linting and secret detection
+- [x] CLI and JSON output
 - [x] Tests and CI
-- [ ] LLM-backed semantic optimizer adapters
+- [ ] Pluggable LLM-backed semantic optimizer
+- [ ] Prompt evaluation / A-B testing
 - [ ] MCP server
 - [ ] VS Code extension
 - [ ] Web UI
-- [ ] Prompt evaluation / A-B testing
 - [ ] Prompt versioning and telemetry-free local history
 
 ## Philosophy
