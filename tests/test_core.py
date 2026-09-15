@@ -1,6 +1,7 @@
 import pytest
 
-from prompt_master import MODES, classify, optimize
+from prompt_master import classify, optimize
+from prompt_master.core import VALID_MODES
 
 
 def test_classify_sql():
@@ -34,6 +35,4 @@ def test_empty_request():
 
 
 def test_all_modes_are_valid():
-    assert "auto" in MODES
-    assert "coding" in MODES
-    assert "agent" in MODES
+    assert {"auto", "coding", "sql", "data", "research", "writing", "analysis", "creative", "image", "agent"} == VALID_MODES
