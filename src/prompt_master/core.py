@@ -1,46 +1,55 @@
-"""Deterministic first-generation optimizer.
+"""Core deterministic prompt optimization engine.
 
-This layer deliberately does not call an LLM. It converts a rough request into a
-portable prompt structure and can later be wrapped by provider-specific semantic
-optimizers.
+Prompt Master deliberately has no network dependency. The deterministic engine
+creates a portable prompt structure that can later be enhanced by optional
+LLM adapters without changing the public Prompt representation.
 """
 
 import re
 from .schemas import OptimizationResult, Prompt
 
 MODES = {
-    "coding": ("code", "python", "javascript", "bug", "api", "function", "program"),
-    "sql": ("sql", "query", "bigquery", "database", "join", "select"),
-    "data": ("data", "etl", "pipeline", "warehouse", "pandas", "dataset"),
-    "research": ("research", "sources", "paper", "literature", "compare"),
-    "writing": ("write", "rewrite", "email", "article", "resume", "blog"),
-    "analysis": ("analyze", "analyse", "evaluate", "explain", "reason"),
-    "creative": ("story", "creative", "poem", "script", "character"),
-    "image": ("image", "photo", "portrait", "render", "visual", "prompt"),
-    "agent": ("agent", "tool", "workflow", "automate", "automation"),
+    "coding": ("code", "python", "javascript", "typescript", "bug", "api", "function", "program", "class"),
+    "sql": ("sql", "query", "bigquery", "database", "join", "select", "table", "cte"),
+    "data": ("data", "etl", "pipeline", "warehouse", "pandas", "dataset", "dwh", "ingestion"),
+    "research": ("research", "sources", "paper", "literature", "compare", "evidence", "study"),
+    "writing": ("write", "rewrite", "email", "article", "resume", "blog", "message", "document"),
+    "analysis": ("analyze", "analyse", "evaluate", "explain", "reason", "investigate", "assess"),
+    "creative": ("story", "creative", "poem", "script", "character", "fiction", "lyrics"),
+    "image": ("image", "photo", "portrait", "render", "visual", "illustration", "photorealistic"),
+    "agent": ("agent", "tool", "workflow", "automate", "automation", "mcp", "orchestrate"),
 }
+
+VALID_MODES = {"auto", *MODES}
 
 
 def classify(text: str) -> str:
+    """Infer the most likely task mode using deterministic keyword scoring."""
     low = text.lower()
-    scores = {mode: sum(low.count(k) for k in keys) for mode, keys in MODES.items()}
+    scores = {mode: sum(len(re.findall(rf"\b{re.escape(k)}\b", low)) for k in keys) for mode, keys in MODES.items()}
     best = max(scores, key=scores.get)
     return best if scores[best] else "auto"
 
 
 def _questions(mode: str, text: str) -> list[str]:
-    questions = []
+    """Return at most two high-value clarification questions."""
+    low = text.lower()
+    questions: list[str] = []
     if mode in {"coding", "sql", "data"}:
-        if not any(x in text.lower() for x in ("schema", "table", "code", "query", "input")):
+        if not any(x in low for x in ("schema", "table", "code", "query", "input", "sample")):
             questions.append("What is the relevant code, schema, input, or sample data?")
     if mode == "research":
         questions.append("What scope, geography, timeframe, and source-quality requirements should be used?")
     if mode in {"writing", "creative"}:
-        questions.append("Who is the audience, and what tone or length should the output have?")
+        if not any(x in low for x in ("audience", "tone", "formal", "casual", "concise", "long")):
+            questions.append("Who is the audience, and what tone or length should the output have?")
+    if mode == "image" and not any(x in low for x in ("aspect", "ratio", "vertical", "square", "landscape")):
+        questions.append("What aspect ratio or target platform should the image use?")
     return questions[:2]
 
 
 def render(p: Prompt) -> str:
+    """Render the portable Prompt structure as readable Markdown."""
     sections = [f"## Objective\n{p.objective.strip()}"]
     if p.context:
         sections.append("## Context\n" + "\n".join(f"- {x}" for x in p.context))
@@ -60,13 +69,14 @@ def render(p: Prompt) -> str:
 
 
 def optimize(request: str, mode: str = "auto") -> OptimizationResult:
+    """Turn a rough request into a robust, provider-neutral prompt."""
     request = re.sub(r"\s+", " ", request).strip()
     if not request:
         raise ValueError("Request cannot be empty")
-    selected = classify(request) if mode == "auto" else mode
-    if selected not in {"auto", *MODES}:
-        raise ValueError(f"Unknown mode: {mode}")
+    if mode not in VALID_MODES:
+        raise ValueError(f"Unknown mode: {mode}. Choose from: {', '.join(sorted(VALID_MODES))}")
 
+    selected = classify(request) if mode == "auto" else mode
     questions = _questions(selected, request)
     prompt = Prompt(
         objective=request,
@@ -87,8 +97,8 @@ def optimize(request: str, mode: str = "auto") -> OptimizationResult:
         clarification_questions=questions,
         mode=selected,
     )
-    diagnostics = []
+    diagnostics: list[str] = []
     if questions:
         diagnostics.append("Some context may be missing; the prompt preserves this instead of guessing.")
-    score = min(100, 60 + len(prompt.constraints) * 5 + len(prompt.quality_criteria) * 5)
+    score = min(100, 70 + len(prompt.constraints) * 5 + len(prompt.quality_criteria) * 5)
     return OptimizationResult(prompt=prompt, rendered=render(prompt), diagnostics=diagnostics, score=score)
