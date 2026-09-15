@@ -35,6 +35,10 @@ evaluate / compare
 - **A/B comparison:** compare two prompt candidates and see which scores better and why.
 - **Automation-friendly:** human-readable Markdown or machine-readable JSON.
 
+## PC + VS Code User Manual
+
+For the complete Windows/macOS/Linux setup guide, everyday workflow, troubleshooting, semantic-mode notes, and development commands, see **[USER_GUIDE.md](USER_GUIDE.md)**.
+
 ## Install in VS Code
 
 You do **not** need to copy the files manually. Clone the repository into your PC and install it in editable mode:
@@ -158,6 +162,8 @@ prompt-master "Rewrite this technical request to be clearer" --semantic
 
 You can point the adapter at an OpenAI-compatible endpoint with `PROMPT_MASTER_BASE_URL`. This can also be used with compatible local servers. Semantic mode is intentionally **not** enabled by default.
 
+**Performance note:** the default deterministic path is local and should be very fast. `--semantic` adds model/API latency by design. If speed matters, use the default path and only enable semantic optimization when the extra reasoning is worth the wait.
+
 ### Check the installed version
 
 ```bash
@@ -249,11 +255,11 @@ The project targets Python **3.10+** and has no required runtime dependencies.
 
 ### Next
 
-- [ ] Semantic evaluation against actual model outputs
-- [ ] Multi-provider native adapters
+- [ ] Strengthen the linter into a deeper prompt static-analysis engine
 - [ ] Prompt compression / redundancy reduction
-- [ ] MCP server
+- [ ] Semantic evaluation against actual model outputs
 - [ ] VS Code extension
+- [ ] MCP server
 - [ ] Web UI
 - [ ] Prompt versioning and telemetry-free local history
 
