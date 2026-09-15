@@ -4,9 +4,9 @@
 
 Prompt Master turns a rough request into a structured, robust prompt that can be pasted into ChatGPT, Claude, Gemini, Copilot, Cursor, local models, or another LLM.
 
-## 1.1.0 — smarter optimization, optional semantics, evaluation
+## 1.2.0 — faster core, stronger linting, deterministic compression
 
-Prompt Master is intentionally lightweight: the deterministic core has **no runtime dependencies and no network calls**. It preserves the user's intent, classifies the task, audits missing context, constructs a practical prompt, and lints quality and credential-leakage problems locally.
+Prompt Master is intentionally lightweight: the deterministic core has **no runtime dependencies and no network calls**. It preserves the user's intent, classifies the task, audits missing context, constructs a practical prompt, lints quality and credential-leakage problems locally, and can conservatively compress repeated instructions.
 
 An **explicitly opt-in** semantic mode can then pass the generated prompt through an OpenAI-compatible endpoint. This is an optional layer; the deterministic core remains usable offline.
 
@@ -15,7 +15,7 @@ An **explicitly opt-in** semantic mode can then pass the generated prompt throug
 ```text
 rough request
     ↓
-classify → completeness audit → construct → lint → render
+normalize → classify → completeness audit → construct → compress → lint → render
     ↓
 (optional semantic optimizer)
     ↓
@@ -30,6 +30,9 @@ evaluate / compare
 - **Minimal assumptions:** flags missing context instead of inventing facts.
 - **Structured:** separates objective, context, constraints, approach, quality, and output.
 - **Safe by default:** deterministic mode does not send prompt text anywhere; likely credentials are detected locally.
+- **Fast local path:** classification patterns are compiled once and normalized text is reused across pipeline stages.
+- **Stronger linting:** detects missing instructions, duplicates, conflicting length guidance, vague references, and question-heavy prompts.
+- **Deterministic compression:** removes duplicate instruction lines and redundant whitespace without an LLM.
 - **Optional semantic optimization:** use an OpenAI-compatible endpoint only when explicitly requested.
 - **Local evaluation:** scores prompt-construction quality with an explainable rubric.
 - **A/B comparison:** compare two prompt candidates and see which scores better and why.
@@ -87,17 +90,7 @@ After installation, open this folder in VS Code. The `prompt-master` command wil
 
 ```bash
 prompt-master "Create a BigQuery query to find customers with more than 3 orders"
-```
-
-Short alias:
-
-```bash
 pm "Explain this Python error and give me a production-safe fix"
-```
-
-Module form also works:
-
-```bash
 python -m prompt_master "Rewrite this email to sound professional and polite"
 ```
 
@@ -106,6 +99,14 @@ python -m prompt_master "Rewrite this email to sound professional and polite"
 ```bash
 prompt-master "Create a SQL query to find customers with more than 3 orders" --lint
 ```
+
+### Compress the generated prompt
+
+```bash
+prompt-master "Make this SQL request concise without losing requirements" --compress
+```
+
+Compression is deliberately conservative and local. It reports before/after word counts and should be treated as a heuristic, not a proof of semantic equivalence.
 
 ### Evaluate the generated prompt
 
@@ -136,7 +137,7 @@ prompt-master "Create a cinematic portrait prompt" --mode image
 ### JSON for scripts and automation
 
 ```bash
-prompt-master "Explain this Python error and give me a production-safe fix" --lint --evaluate --json
+prompt-master "Explain this Python error and give me a production-safe fix" --lint --evaluate --compress --json
 ```
 
 ### Read from stdin
@@ -162,7 +163,7 @@ prompt-master "Rewrite this technical request to be clearer" --semantic
 
 You can point the adapter at an OpenAI-compatible endpoint with `PROMPT_MASTER_BASE_URL`. This can also be used with compatible local servers. Semantic mode is intentionally **not** enabled by default.
 
-**Performance note:** the default deterministic path is local and should be very fast. `--semantic` adds model/API latency by design. If speed matters, use the default path and only enable semantic optimization when the extra reasoning is worth the wait.
+**Performance note:** the default deterministic path is local and avoids network latency. `--semantic` adds model/API latency by design. If speed matters, use the default path and enable semantic optimization only when the extra reasoning is worth the wait.
 
 ### Check the installed version
 
@@ -177,38 +178,32 @@ prompt-master --version
 ## Python API
 
 ```python
-from prompt_master import compare, evaluate, optimize
+from prompt_master import compress, compare, evaluate, optimize
 
 result = optimize("Create a BigQuery query to find duplicate customer IDs")
 print(result.rendered)
 print(result.prompt.mode)
 print(result.score)
 
+compressed = compress(result.rendered)
+print(compressed.compressed)
+print(compressed.reduction_percent)
+
 assessment = evaluate(result.rendered)
 print(assessment.score)
-print(assessment.issues)
 
 comparison = compare("Tell me about SQL", result.rendered)
 print(comparison.winner, comparison.margin)
 ```
 
-## Example
-
-Input:
-
-> make this SQL faster
-
-Prompt Master does not pretend to know the schema or query. It identifies SQL as the task, exposes the classification signal, preserves the request, adds safe instructions, and asks for missing query/schema or sample data when needed.
-
 ## Architecture
-
-The project is split into small, dependency-free layers:
 
 ```text
 src/prompt_master/
-├── core.py           # optimization, rendering, adapter orchestration
-├── classification.py # explainable task classification
+├── core.py           # optimization, normalization, rendering, adapter orchestration
+├── classification.py # cached, explainable task classification
 ├── audit.py          # completeness / missing-context audit
+├── compression.py    # conservative local compression
 ├── evaluation.py     # local scoring and A/B comparison
 ├── adapters.py       # optional LLM adapter protocol + OpenAI-compatible adapter
 ├── schemas.py        # portable Prompt / OptimizationResult models
@@ -237,7 +232,7 @@ The project targets Python **3.10+** and has no required runtime dependencies.
 
 ## Roadmap
 
-### Completed through Phase 3
+### Completed through Phase 4
 
 - [x] Provider-neutral prompt IR
 - [x] Task classification
@@ -245,7 +240,10 @@ The project targets Python **3.10+** and has no required runtime dependencies.
 - [x] Completeness and assumption audit
 - [x] Prompt construction and Markdown rendering
 - [x] Deterministic linting and local secret detection
-- [x] CLI, `pm` alias, stdin, and JSON output
+- [x] Deeper deterministic lint checks for duplicates, conflicts, vague references, and question-heavy prompts
+- [x] Fast deterministic pipeline: compiled classification patterns + shared normalization
+- [x] Conservative deterministic prompt compression
+- [x] CLI, `pm` alias, stdin, JSON output, compression, lint, evaluation
 - [x] Python module entry point
 - [x] Packaging metadata, MIT license, tests, and CI foundation
 - [x] Optional LLM-backed semantic optimizer
@@ -255,13 +253,12 @@ The project targets Python **3.10+** and has no required runtime dependencies.
 
 ### Next
 
-- [ ] Strengthen the linter into a deeper prompt static-analysis engine
-- [ ] Prompt compression / redundancy reduction
 - [ ] Semantic evaluation against actual model outputs
 - [ ] VS Code extension
 - [ ] MCP server
 - [ ] Web UI
 - [ ] Prompt versioning and telemetry-free local history
+- [ ] Optional smart routing for simple vs. complex requests
 
 ## Philosophy
 
