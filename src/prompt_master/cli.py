@@ -1,24 +1,43 @@
+"""Command-line interface for Prompt Master."""
+
 import argparse
 import json
-from .core import optimize
+import sys
+
+from . import __version__
+from .core import MODES, optimize
 from .lint import lint
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="prompt-master",
+        description="Turn rough requests into robust, provider-neutral prompts.",
+    )
+    parser.add_argument("request", nargs="*", help="The request to optimize. Reads stdin when omitted.")
+    parser.add_argument("--mode", choices=["auto", *MODES], default="auto", help="Task mode (default: auto).")
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    parser.add_argument("--lint", action="store_true", help="Run static quality and security checks.")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    return parser
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Turn rough requests into robust, provider-neutral prompts.")
-    parser.add_argument("request", nargs="+", help="The request to optimize")
-    parser.add_argument("--mode", default="auto", help="auto, coding, sql, data, research, writing, analysis, creative, image, agent")
-    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
-    parser.add_argument("--lint", action="store_true", help="Run static quality and security checks")
+    parser = build_parser()
     args = parser.parse_args()
 
-    request = " ".join(args.request)
+    request = " ".join(args.request).strip()
+    if not request and not sys.stdin.isatty():
+        request = sys.stdin.read().strip()
+    if not request:
+        parser.error("provide a request or pipe one through stdin")
+
     result = optimize(request, args.mode)
-    issues = lint(result.rendered) if args.lint else []
+    issues = lint(request) if args.lint else []
 
     if args.json:
         payload = {
-            "version": "0.2",
+            "version": __version__,
             "mode": result.prompt.mode,
             "score": result.score,
             "prompt": result.rendered,
@@ -32,8 +51,8 @@ def main() -> None:
     print(result.rendered)
     if result.prompt.clarification_questions:
         print("\n## Optional clarifications")
-        for q in result.prompt.clarification_questions:
-            print(f"- {q}")
+        for question in result.prompt.clarification_questions:
+            print(f"- {question}")
     print(f"\nPrompt quality score: {result.score}/100")
 
     if issues:
