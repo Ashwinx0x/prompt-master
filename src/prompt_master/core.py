@@ -1,13 +1,8 @@
-"""Core deterministic prompt optimization engine.
-
-Prompt Master deliberately has no network dependency. The deterministic engine
-creates a portable prompt structure that can later be enhanced by optional
-LLM adapters without changing the public Prompt representation.
-"""
+"""Core deterministic prompt optimization engine."""
 
 import re
 from .audit import audit
-from .classification import classify_detailed
+from .classification import classify_detailed, normalize_text
 from .schemas import OptimizationResult, Prompt
 
 MODES = {
@@ -21,32 +16,28 @@ MODES = {
     "image": ("image", "photo", "portrait", "render", "visual", "illustration", "photorealistic"),
     "agent": ("agent", "tool", "workflow", "automate", "automation", "mcp", "orchestrate"),
 }
-
 VALID_MODES = {"auto", *MODES}
 
 
 def classify(text: str) -> str:
-    """Infer the most likely task mode using weighted deterministic signals."""
     return classify_detailed(text).mode
 
 
-def _questions(mode: str, text: str) -> list[str]:
-    """Return at most two high-value clarification questions."""
-    low = text.lower()
+def _questions(mode: str, text: str, *, normalized: bool = False) -> list[str]:
+    low = text if normalized else normalize_text(text)
     questions: list[str] = []
-    if mode in {"coding", "sql", "data"} and not any(x in low for x in ("schema", "table", "code", "query", "input", "sample")):
+    if mode in {"coding", "sql", "data"} and not re.search(r"\b(schema|table|code|query|input|sample|example|data)\b", low):
         questions.append("What is the relevant code, schema, input, or sample data?")
-    if mode == "research":
+    if mode == "research" and not re.search(r"\b(scope|geography|country|region|timeframe|year|source|sources)\b", low):
         questions.append("What scope, geography, timeframe, and source-quality requirements should be used?")
-    if mode in {"writing", "creative"} and not any(x in low for x in ("audience", "tone", "formal", "casual", "concise", "long")):
+    if mode in {"writing", "creative"} and not re.search(r"\b(audience|tone|formal|casual|concise|long|short|length|style)\b", low):
         questions.append("Who is the audience, and what tone or length should the output have?")
-    if mode == "image" and not any(x in low for x in ("aspect", "ratio", "vertical", "square", "landscape")):
+    if mode == "image" and not re.search(r"\b(aspect|ratio|vertical|square|landscape|resolution|size|platform)\b", low):
         questions.append("What aspect ratio or target platform should the image use?")
     return questions[:2]
 
 
 def render(p: Prompt) -> str:
-    """Render the portable Prompt structure as readable Markdown."""
     sections = [f"## Objective\n{p.objective.strip()}"]
     if p.context:
         sections.append("## Context\n" + "\n".join(f"- {x}" for x in p.context))
@@ -66,17 +57,18 @@ def render(p: Prompt) -> str:
 
 
 def optimize(request: str, mode: str = "auto") -> OptimizationResult:
-    """Turn a rough request into a robust, provider-neutral prompt."""
+    """Turn a rough request into a robust, provider-neutral prompt locally."""
     request = re.sub(r"\s+", " ", request).strip()
     if not request:
         raise ValueError("Request cannot be empty")
     if mode not in VALID_MODES:
         raise ValueError(f"Unknown mode: {mode}. Choose from: {', '.join(sorted(VALID_MODES))}")
 
-    classification = classify_detailed(request)
+    normalized = normalize_text(request)
+    classification = classify_detailed(normalized, normalized=True)
     selected = classification.mode if mode == "auto" else mode
-    audit_issues = audit(request, selected)
-    questions = _questions(selected, request)
+    audit_issues = audit(normalized, selected, normalized=True)
+    questions = _questions(selected, normalized, normalized=True)
     prompt = Prompt(
         objective=request,
         context=["Treat the user's request as the source of truth."],
@@ -96,9 +88,7 @@ def optimize(request: str, mode: str = "auto") -> OptimizationResult:
         clarification_questions=questions,
         mode=selected,
     )
-    diagnostics: list[str] = [
-        f"Intent confidence: {classification.confidence:.0%}" if mode == "auto" else "Mode selected explicitly by the user."
-    ]
+    diagnostics = [f"Intent confidence: {classification.confidence:.0%}" if mode == "auto" else "Mode selected explicitly by the user."]
     if classification.matched_signals and mode == "auto":
         diagnostics.append("Classification signals: " + ", ".join(classification.matched_signals[:5]))
     if audit_issues:
