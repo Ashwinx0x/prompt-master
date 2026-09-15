@@ -5,7 +5,8 @@ import json
 import sys
 
 from . import __version__
-from .core import MODES, optimize
+from .adapters import OpenAICompatibleAdapter
+from .core import MODES, optimize, optimize_with_adapter
 from .lint import lint
 
 
@@ -18,6 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mode", choices=["auto", *MODES], default="auto", help="Task mode (default: auto).")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     parser.add_argument("--lint", action="store_true", help="Run static quality and security checks.")
+    parser.add_argument("--semantic", action="store_true", help="Run an optional LLM-backed semantic optimization pass.")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
 
@@ -32,7 +34,14 @@ def main() -> None:
     if not request:
         parser.error("provide a request or pipe one through stdin")
 
-    result = optimize(request, args.mode)
+    if args.semantic:
+        try:
+            result = optimize_with_adapter(request, args.mode, OpenAICompatibleAdapter.from_env())
+        except (ValueError, RuntimeError) as exc:
+            parser.error(str(exc))
+    else:
+        result = optimize(request, args.mode)
+
     issues = lint(request) if args.lint else []
 
     if args.json:
@@ -44,6 +53,7 @@ def main() -> None:
             "diagnostics": result.diagnostics,
             "lint": [issue.__dict__ for issue in issues],
             "clarifications": result.prompt.clarification_questions,
+            "semantic": args.semantic,
         }
         print(json.dumps(payload, indent=2))
         return
@@ -53,6 +63,10 @@ def main() -> None:
         print("\n## Optional clarifications")
         for question in result.prompt.clarification_questions:
             print(f"- {question}")
+    if result.diagnostics:
+        print("\n## Diagnostics")
+        for diagnostic in result.diagnostics:
+            print(f"- {diagnostic}")
     print(f"\nPrompt quality score: {result.score}/100")
 
     if issues:
