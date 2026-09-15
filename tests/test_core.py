@@ -1,8 +1,14 @@
-from prompt_master.core import classify, optimize
+import pytest
+
+from prompt_master import MODES, classify, optimize
 
 
 def test_classify_sql():
     assert classify("make this SQL query faster") == "sql"
+
+
+def test_classify_image():
+    assert classify("create a photorealistic portrait") == "image"
 
 
 def test_optimizer_preserves_request():
@@ -12,9 +18,22 @@ def test_optimizer_preserves_request():
     assert "Do not invent" in result.rendered
 
 
+def test_explicit_mode_overrides_auto():
+    result = optimize("Explain this SQL query", mode="writing")
+    assert result.prompt.mode == "writing"
+
+
+def test_unknown_mode():
+    with pytest.raises(ValueError):
+        optimize("hello", mode="unknown")
+
+
 def test_empty_request():
-    try:
+    with pytest.raises(ValueError):
         optimize("   ")
-    except ValueError:
-        return
-    assert False, "Expected ValueError"
+
+
+def test_all_modes_are_valid():
+    assert "auto" in MODES
+    assert "coding" in MODES
+    assert "agent" in MODES
